@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>agent-mesh</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg: #1a1b23;
+        --bg-surface: #22232e;
+        --bg-hover: #2a2b38;
+        --border: #333445;
+        --text: #e0e0e8;
+        --text-dim: #888899;
+        --text-muted: #555566;
+        --accent: #7c6ff7;
+        --accent-dim: #5a50b4;
+      }
+
+      body {
+        font-family:
+          "SF Mono", "Cascadia Code", "Fira Code", "Consolas", monospace;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ── Header ── */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-surface);
+        flex-shrink: 0;
+      }
+
+      header h1 {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--accent);
+        letter-spacing: 0.5px;
+      }
+
+      .connection-status {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #555;
+        flex-shrink: 0;
+      }
+      .connection-status.connected {
+        background: #4ade80;
+      }
+      .connection-status.disconnected {
+        background: #f87171;
+      }
+
+      .agents-bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-left: auto;
+        flex-wrap: wrap;
+      }
+
+      .agents-bar .label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .agent-badge {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 12px;
+        border: 1px solid;
+        font-weight: 500;
+      }
+
+      /* ── Messages ── */
+      #messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .msg {
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        line-height: 1.5;
+        max-width: 100%;
+        animation: fadeIn 0.15s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .msg:hover {
+        background: var(--bg-hover);
+      }
+
+      .msg .meta {
+        display: inline;
+      }
+
+      .msg .sender {
+        font-weight: 600;
+        margin-right: 4px;
+      }
+
+      .msg .arrow {
+        color: var(--text-muted);
+        margin-right: 4px;
+        font-size: 11px;
+      }
+
+      .msg .recipient {
+        font-weight: 500;
+        margin-right: 8px;
+        font-size: 12px;
+      }
+
+      .msg .time {
+        color: var(--text-muted);
+        font-size: 11px;
+        margin-right: 8px;
+      }
+
+      .msg .broadcast-badge {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 8px;
+        background: rgba(124, 111, 247, 0.15);
+        color: var(--accent);
+        border: 1px solid rgba(124, 111, 247, 0.3);
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+
+      .msg .content {
+        color: var(--text);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .msg.system {
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 12px;
+        padding: 4px 12px;
+      }
+
+      .msg.system .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+
+      .msg.system .dot.connected {
+        background: #4ade80;
+      }
+      .msg.system .dot.disconnected {
+        background: #f87171;
+      }
+
+      /* ── Input ── */
+      .input-area {
+        display: flex;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid var(--border);
+        background: var(--bg-surface);
+        flex-shrink: 0;
+        align-items: center;
+      }
+
+      .input-area label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex-shrink: 0;
+      }
+
+      #recipient {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        width: 120px;
+        flex-shrink: 0;
+      }
+
+      #recipient:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      #input {
+        flex: 1;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+
+      #input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      #send-btn {
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-family: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      #send-btn:hover {
+        background: var(--accent-dim);
+      }
+      #send-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      /* ── Deliberation ── */
+      .deliberation-group {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin: 4px 0;
+      }
+
+      .deliberation-group.collapsed .deliberation-messages {
+        max-height: 60px;
+        mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 1) 20%,
+          rgba(0, 0, 0, 0) 100%
+        );
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 1) 20%,
+          rgba(0, 0, 0, 0) 100%
+        );
+      }
+
+      .deliberation-group.expanded .deliberation-messages {
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .deliberation-messages {
+        padding: 4px 0;
+      }
+
+      .deliberation-messages::-webkit-scrollbar {
+        width: 4px;
+      }
+      .deliberation-messages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .deliberation-messages::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 2px;
+      }
+
+      .deliberation-messages .msg {
+        opacity: 0.6;
+        font-size: 12px;
+      }
+
+      .deliberation-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        font-size: 11px;
+        color: var(--text-muted);
+        cursor: pointer;
+        user-select: none;
+        border-top: 1px solid var(--border);
+        background: var(--bg-surface);
+      }
+
+      .deliberation-toggle:hover {
+        color: var(--text-dim);
+        background: var(--bg-hover);
+      }
+
+      .deliberation-toggle .chevron {
+        transition: transform 0.2s;
+        font-size: 10px;
+      }
+
+      .deliberation-group.expanded .deliberation-toggle .chevron {
+        transform: rotate(180deg);
+      }
+
+      /* ── Empty state ── */
+      .empty-state {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        color: var(--text-muted);
+        font-size: 14px;
+      }
+
+      /* ── Scrollbar ── */
+      #messages::-webkit-scrollbar {
+        width: 6px;
+      }
+      #messages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #messages::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+      #messages::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="connection-status" id="conn-status"></div>
+      <h1>agent-mesh</h1>
+      <div class="agents-bar">
+        <span class="label">Online:</span>
+        <div id="agents-list"></div>
+      </div>
+    </header>
+
+    <div id="messages">
+      <div class="empty-state" id="empty">Connecting to broker...</div>
+    </div>
+
+    <div class="input-area">
+      <label for="recipient">To:</label>
+      <select id="recipient">
+        <option value="*">everyone</option>
+      </select>
+      <input
+        id="input"
+        type="text"
+        placeholder="Type a message..."
+        autocomplete="off"
+      />
+      <button id="send-btn" disabled>Send</button>
+    </div>
+
+    <script>
+      // ── Agent colors ──
+      const AGENT_COLORS = [
+        "#7c6ff7",
+        "#e06c75",
+        "#61afef",
+        "#98c379",
+        "#d19a66",
+        "#c678dd",
+        "#56b6c2",
+        "#e5c07b",
+      ];
+      const colorMap = {};
+      let colorIndex = 0;
+
+      function getAgentColor(name) {
+        if (!colorMap[name]) {
+          colorMap[name] = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
+          colorIndex++;
+        }
+        return colorMap[name];
+      }
+
+      // ── DOM refs ──
+      const messagesEl = document.getElementById("messages");
+      const emptyEl = document.getElementById("empty");
+      const inputEl = document.getElementById("input");
+      const sendBtn = document.getElementById("send-btn");
+      const recipientEl = document.getElementById("recipient");
+      const agentsListEl = document.getElementById("agents-list");
+      const connStatus = document.getElementById("conn-status");
+
+      let ws;
+      let agents = [];
+      let hasMessages = false;
+      let currentDeliberation = null; // { groupEl, messagesEl, count }
+
+      // ── WebSocket connection ──
+      function connect() {
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${protocol}//${location.host}`);
+
+        ws.onopen = () => {
+          connStatus.className = "connection-status connected";
+          sendBtn.disabled = false;
+          ws.send(JSON.stringify({ type: "register_viewer" }));
+          // Request history
+          ws.send(
+            JSON.stringify({
+              type: "read_history",
+              requestId: "init-" + Date.now(),
+              limit: 100,
+            }),
+          );
+        };
+
+        ws.onclose = () => {
+          connStatus.className = "connection-status disconnected";
+          sendBtn.disabled = true;
+          setTimeout(connect, 2000);
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+
+          switch (msg.type) {
+            case "deliver":
+              addMessage(msg);
+              break;
+            case "system_event":
+              handleSystemEvent(msg);
+              break;
+            case "read_history_response":
+              if (msg.messages.length > 0) {
+                for (const m of msg.messages) {
+                  addMessage(m, true);
+                }
+                scrollToBottom();
+              }
+              break;
+          }
+        };
+      }
+
+      // ── Deliberation helpers ──
+      function isDeliberation(content) {
+        return content.trimStart().startsWith("[deliberation]");
+      }
+
+      function isFinalAnswer(content) {
+        return content.trimStart().startsWith("[final]");
+      }
+
+      function stripPrefix(content, prefix) {
+        return content.trimStart().slice(prefix.length).trimStart();
+      }
+
+      function ensureDeliberationGroup() {
+        if (currentDeliberation) return currentDeliberation;
+
+        const groupEl = document.createElement("div");
+        groupEl.className = "deliberation-group collapsed";
+
+        const msgsEl = document.createElement("div");
+        msgsEl.className = "deliberation-messages";
+
+        const toggleEl = document.createElement("div");
+        toggleEl.className = "deliberation-toggle";
+        toggleEl.innerHTML =
+          '<span class="chevron">&#9660;</span> <span class="toggle-text">Agent deliberation (0 messages)</span>';
+        toggleEl.addEventListener("click", () => {
+          const isCollapsed = groupEl.classList.contains("collapsed");
+          groupEl.classList.toggle("collapsed", !isCollapsed);
+          groupEl.classList.toggle("expanded", isCollapsed);
+        });
+
+        groupEl.appendChild(msgsEl);
+        groupEl.appendChild(toggleEl);
+        messagesEl.appendChild(groupEl);
+
+        currentDeliberation = {
+          groupEl,
+          messagesEl: msgsEl,
+          toggleEl,
+          count: 0,
+        };
+        return currentDeliberation;
+      }
+
+      function closeDeliberation() {
+        currentDeliberation = null;
+      }
+
+      // ── Render a chat message ──
+      function addMessage(msg, isHistory = false) {
+        if (!hasMessages) {
+          emptyEl.remove();
+          hasMessages = true;
+        }
+
+        const content = msg.content || "";
+        const isDelib = isDeliberation(content);
+        const isFinal = isFinalAnswer(content);
+        const displayContent = isDelib
+          ? stripPrefix(content, "[deliberation]")
+          : isFinal
+            ? stripPrefix(content, "[final]")
+            : content;
+
+        const el = document.createElement("div");
+        el.className = "msg";
+
+        const time = new Date(msg.timestamp).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+
+        const senderColor = getAgentColor(msg.from);
+        const isBroadcast = msg.to === "*";
+
+        let recipientHtml = "";
+        if (isBroadcast) {
+          recipientHtml = `<span class="broadcast-badge">broadcast</span>`;
+        } else {
+          const recipientColor = getAgentColor(msg.to);
+          recipientHtml = `<span class="arrow">&rarr;</span><span class="recipient" style="color: ${recipientColor}">${esc(msg.to)}</span>`;
+        }
+
+        el.innerHTML =
+          `<span class="time">${time}</span>` +
+          `<span class="sender" style="color: ${senderColor}">${esc(msg.from)}</span>` +
+          recipientHtml +
+          `<span class="content">${esc(displayContent)}</span>`;
+
+        if (isDelib) {
+          const group = ensureDeliberationGroup();
+          group.messagesEl.appendChild(el);
+          group.count++;
+          group.toggleEl.querySelector(".toggle-text").textContent =
+            `Agent deliberation (${group.count} message${group.count === 1 ? "" : "s"})`;
+        } else {
+          if (isFinal) {
+            closeDeliberation();
+          }
+          messagesEl.appendChild(el);
+          if (!isDelib && !isFinal && currentDeliberation) {
+            // Non-deliberation message breaks the group
+            closeDeliberation();
+          }
+        }
+
+        if (!isHistory) {
+          scrollToBottom();
+        }
+      }
+
+      // ── System events (agent join/leave) ──
+      function handleSystemEvent(msg) {
+        agents = msg.agents;
+        renderAgents();
+
+        if (msg.agentName) {
+          const el = document.createElement("div");
+          const isConnect = msg.event === "agent_connected";
+          const color = getAgentColor(msg.agentName);
+          el.className = "msg system";
+          el.innerHTML =
+            `<span class="dot ${isConnect ? "connected" : "disconnected"}"></span>` +
+            `<span style="color: ${color}; font-style: normal; font-weight: 500;">${esc(msg.agentName)}</span> ` +
+            (isConnect ? "joined the mesh" : "left the mesh");
+
+          if (!hasMessages) {
+            emptyEl.remove();
+            hasMessages = true;
+          }
+          messagesEl.appendChild(el);
+          scrollToBottom();
+        }
+      }
+
+      // ── Render agent badges ──
+      function renderAgents() {
+        agentsListEl.innerHTML = "";
+
+        // Update recipient dropdown
+        const currentValue = recipientEl.value;
+        recipientEl.innerHTML = '<option value="*">everyone</option>';
+
+        if (agents.length === 0) {
+          agentsListEl.innerHTML =
+            '<span style="color: var(--text-muted); font-size: 12px;">none</span>';
+          return;
+        }
+
+        for (const agent of agents) {
+          const color = getAgentColor(agent.name);
+          const badge = document.createElement("span");
+          badge.className = "agent-badge";
+          badge.textContent = agent.name;
+          badge.style.color = color;
+          badge.style.borderColor = color + "55";
+          badge.style.background = color + "15";
+          agentsListEl.appendChild(badge);
+
+          const opt = document.createElement("option");
+          opt.value = agent.name;
+          opt.textContent = agent.name;
+          recipientEl.appendChild(opt);
+        }
+
+        recipientEl.value = currentValue;
+        // If previous selection is gone, default to broadcast
+        if (recipientEl.value !== currentValue) {
+          recipientEl.value = "*";
+        }
+      }
+
+      // ── Send message ──
+      function sendMessage() {
+        const content = inputEl.value.trim();
+        if (!content || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+        const msg = {
+          type: "send",
+          id: crypto.randomUUID(),
+          from: "human",
+          to: recipientEl.value,
+          content,
+          timestamp: new Date().toISOString(),
+        };
+
+        ws.send(JSON.stringify(msg));
+        inputEl.value = "";
+        inputEl.focus();
+      }
+
+      sendBtn.addEventListener("click", sendMessage);
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      // ── Helpers ──
+      function scrollToBottom() {
+        requestAnimationFrame(() => {
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        });
+      }
+
+      function esc(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      // ── Go ──
+      connect();
+    </script>
+  </body>
+</html>

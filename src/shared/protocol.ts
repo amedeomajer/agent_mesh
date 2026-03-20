@@ -24,10 +24,17 @@ export interface ReadHistoryRequest {
   requestId: string;
   from?: string;
   limit?: number;
+  since?: string; // ISO 8601 — only return messages after this timestamp
+  wait?: number;  // seconds to long-poll if no messages match (max 30)
+}
+
+export interface RegisterViewerMessage {
+  type: 'register_viewer';
 }
 
 export type BrokerInbound =
   | RegisterMessage
+  | RegisterViewerMessage
   | SendMessage
   | ListAgentsRequest
   | ReadHistoryRequest;
@@ -74,8 +81,17 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface SystemEventMessage {
+  type: 'system_event';
+  event: 'agent_connected' | 'agent_disconnected';
+  agentName: string;
+  timestamp: string;
+  agents: AgentInfo[];
+}
+
 export type BrokerOutbound =
   | ListAgentsResponse
   | ReadHistoryResponse
   | DeliverMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | SystemEventMessage;

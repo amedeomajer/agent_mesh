@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-mesh": {
+      "command": "/Users/amedeomajer/Projects/agent-mesh/node_modules/.bin/tsx",
+      "args": ["/Users/amedeomajer/Projects/agent-mesh/src/mcp-server/index.ts"],
+      "env": {
+        "AGENT_NAME": "CHANGE_ME",
+        "BROKER_URL": "ws://localhost:4200"
+      }
+    }
+  }
+}

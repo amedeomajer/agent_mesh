@@ -197,7 +197,7 @@
         border-top: 1px solid var(--border);
         background: var(--bg-surface);
         flex-shrink: 0;
-        align-items: center;
+        align-items: flex-end;
       }
 
       .input-area label {
@@ -206,6 +206,7 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
         flex-shrink: 0;
+        padding-bottom: 8px;
       }
 
       #recipient {
@@ -234,6 +235,11 @@
         padding: 8px 12px;
         font-size: 13px;
         font-family: inherit;
+        resize: none;
+        overflow-y: auto;
+        max-height: 270px;
+        min-height: 36px;
+        line-height: 1.4;
       }
 
       #input:focus {
@@ -380,12 +386,12 @@
       <select id="recipient">
         <option value="*">everyone</option>
       </select>
-      <input
+      <textarea
         id="input"
-        type="text"
+        rows="1"
         placeholder="Type a message..."
         autocomplete="off"
-      />
+      ></textarea>
       <button id="send-btn" disabled>Send</button>
     </div>
 
@@ -663,6 +669,7 @@
 
         ws.send(JSON.stringify(msg));
         inputEl.value = "";
+        inputEl.style.height = "auto";
         inputEl.focus();
       }
 
@@ -672,6 +679,12 @@
           e.preventDefault();
           sendMessage();
         }
+      });
+
+      // Auto-resize textarea as content grows
+      inputEl.addEventListener("input", () => {
+        inputEl.style.height = "auto";
+        inputEl.style.height = Math.min(inputEl.scrollHeight, 270) + "px";
       });
 
       // ── Helpers ──

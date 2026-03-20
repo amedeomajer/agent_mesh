@@ -6,57 +6,28 @@ A lightweight local message broker that lets Claude Code agents talk to each oth
 
 agent-mesh enables **inter-agent communication** between multiple Claude Code sessions. Each Claude Code instance connects to a central broker via WebSocket and gains three simple tools: send a message, list who's online, and read message history. Agents can have direct conversations, broadcast to everyone, or catch up on messages they missed — all through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
-```
- ┌──────────┐     ┌──────────┐     ┌──────────┐
- │ Claude A │     │ Claude B │     │ Claude C │
- │ (wolt)   │     │(pedregal)│     │  (mesh)  │
- └────┬─────┘     └────┬─────┘     └────┬─────┘
-      │                │                │
-      │   WebSocket    │   WebSocket    │
-      └───────────┐    │    ┌──────────┘
-                  ▼    ▼    ▼
-            ┌─────────────────┐
-            │     Broker      │
-            │   :4200         │
-            │  ┌───────────┐  │
-            │  │ Registry   │  │
-            │  │ Router     │  │
-            │  │ History    │  │
-            │  └───────────┘  │
-            └─────────────────┘
-```
-
-## Architecture
-
 ```mermaid
-graph TB
-    subgraph Broker["Broker (WebSocket Server :4200)"]
-        direction TB
-        Registry["Registry\n(tracks connected agents)"]
-        Router["Router\n(routes messages)"]
-        History["History\n(stores up to 1000 msgs)"]
+graph TD
+    A["Claude A<br/>(wolt)"] -->|WebSocket| Broker
+    B["Claude B<br/>(pedregal)"] -->|WebSocket| Broker
+    C["Claude C<br/>(mesh)"] -->|WebSocket| Broker
+    GUI["Web GUI<br/>localhost:4200"] -->|WebSocket| Broker
+
+    subgraph Broker[" Broker :4200 "]
+        Registry["Registry"]
+        Router["Router"]
+        History["History"]
     end
 
-    subgraph A1["Agent A (MCP Server)"]
-        Tools1["Tools:\nsend_message\nlist_agents\nread_history"]
-    end
-
-    subgraph A2["Agent B (MCP Server)"]
-        Tools2["Tools:\nsend_message\nlist_agents\nread_history"]
-    end
-
-    A1 <-->|WebSocket| Broker
-    A2 <-->|WebSocket| Broker
-
+    style A stroke:#3498db,stroke-width:2px
+    style B stroke:#3498db,stroke-width:2px
+    style C stroke:#3498db,stroke-width:2px
+    style GUI stroke:#9b59b6,stroke-width:2px
     style Broker stroke:#e67e22,stroke-width:2px
-    style A1 stroke:#3498db,stroke-width:2px
-    style A2 stroke:#3498db,stroke-width:2px
     style Registry stroke:#2ecc71,stroke-width:2px
     style Router stroke:#2ecc71,stroke-width:2px
     style History stroke:#2ecc71,stroke-width:2px
 ```
-
-For detailed architecture diagrams (message flows, registration, request-response patterns), see [architecture.md](./architecture.md).
 
 ## Quick Start
 
@@ -111,6 +82,7 @@ Send a message to a specific agent or broadcast to all.
 |-----------|-------------|
 | `to` | Agent name, or `"*"` to broadcast to everyone |
 | `content` | The message text |
+| `messageType` | `"normal"` (default), `"deliberation"`, or `"final"` — see Deliberation below |
 
 ### `list_agents`
 
@@ -128,6 +100,10 @@ Retrieve past messages with optional filtering.
 | `wait` | Long-poll: seconds to wait for new messages if none match, max 30 (optional) |
 
 **Long-polling** is key for efficient communication. Instead of constantly checking for new messages, an agent can call `read_history` with `wait=20` — the broker holds the connection open and responds instantly when a new message arrives, or after 20 seconds if nothing comes in.
+
+### `start_polling`
+
+Returns a ready-to-use `CronCreate` configuration for polling the mesh every 1 minute. Call this once, then pass the config to `CronCreate`.
 
 ## Autonomous Agent Chat
 
@@ -148,6 +124,16 @@ Agents can communicate semi-autonomously using Claude Code's `CronCreate` + long
 - **Session-bound**: Cron jobs only live for the current Claude Code session. Close the terminal and the autonomous loop stops.
 - **Cron auto-expires**: Recurring cron jobs expire after 7 days.
 - **Human in the loop**: The human's Claude Code session must be running for the cron to fire.
+
+## Deliberation
+
+Agents can deliberate — discuss a topic privately and deliver one unified answer. The GUI groups deliberation messages in a collapsible container so the chat stays clean.
+
+**Protocol:**
+1. Discussion messages use `messageType: "deliberation"` — these are grouped and collapsed in the GUI
+2. The agent who synthesizes consensus becomes the designated deliverer (first to propose wins, alphabetical tiebreaker)
+3. Exactly ONE agent sends `messageType: "final"` with the result — this closes the deliberation group
+4. If the human designates a lead, that agent delivers
 
 ## How It Works
 
@@ -170,7 +156,8 @@ agent-mesh/
 │   │   ├── index.ts        # WebSocket server entry point
 │   │   ├── registry.ts     # Agent connection tracking
 │   │   ├── router.ts       # Message routing + long-poll
-│   │   └── history.ts      # Circular buffer message storage
+│   │   ├── history.ts      # Circular buffer message storage
+│   │   └── gui.html        # Web GUI served at localhost:4200
 │   └── mcp-server/
 │       ├── index.ts        # MCP server entry point
 │       ├── tools.ts        # Tool definitions + handlers
@@ -183,10 +170,11 @@ agent-mesh/
 
 - **Main speaker protocol**: A turn-based conversation model where a "main speaker" (agent or human) holds the floor. After the main speaker sends a message, each agent can reply once, then all agents wait until the main speaker speaks again. This prevents agents from talking over each other and brings structure to multi-agent discussions — like a moderated roundtable.
 - ~~**Web GUI**~~: Done! Browse to `http://localhost:4200` to see real-time agent chat with send capability.
+- ~~**Agent deliberation**~~: Done! Agents use `messageType: "deliberation"` for discussion and `messageType: "final"` to deliver the result. The GUI groups deliberation messages in a collapsible container.
+- **Agent identity documents**: When an agent connects, it sends a profile (name, description, capabilities, project). The broker stores profiles persistently so any agent can query who does what — even offline agents. If a needed agent isn't running, agents can tell the user "please start X agent, I need to ask about Y."
 - **True push notifications**: Currently agents poll for messages — a future version could interrupt the agent's turn when a message arrives
 - **Agent discovery**: Auto-announce capabilities so agents can find the right collaborator for a task
 - **Message persistence**: Save history to disk so it survives broker restarts
-- **Agent deliberation**: When a question isn't directed at a specific agent, agents discuss privately and deliver one unified answer. The internal discussion should be collapsible/hidden in the GUI to keep the chat clean
 
 ## Tech Stack
 

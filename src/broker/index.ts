@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
@@ -21,15 +21,113 @@ const router = new Router(registry, history);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const guiHtml = readFileSync(resolve(__dirname, 'gui.html'), 'utf-8');
 
-// HTTP server serves the GUI
+// Uploads directory
+const uploadsDir = resolve(__dirname, '..', '..', 'uploads');
+if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+
+const MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+
+// HTTP server serves the GUI and uploads
 const server = createServer((req, res) => {
   if (req.url === '/' || req.url === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(guiHtml);
-  } else {
-    res.writeHead(404);
-    res.end('Not found');
+    return;
   }
+
+  // Serve uploaded images
+  if (req.method === 'GET' && req.url?.startsWith('/uploads/')) {
+    const filename = req.url.slice('/uploads/'.length);
+    // Prevent directory traversal
+    if (filename.includes('..') || filename.includes('/')) {
+      res.writeHead(400);
+      res.end('Invalid filename');
+      return;
+    }
+    const filePath = resolve(uploadsDir, filename);
+    if (!existsSync(filePath)) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+    const ext = extname(filename).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(readFileSync(filePath));
+    return;
+  }
+
+  // Upload endpoint
+  if (req.method === 'POST' && req.url === '/uploads') {
+    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+    const ALLOWED_TYPES: Record<string, string> = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+      'image/svg+xml': '.svg',
+    };
+
+    const contentType = req.headers['content-type'] || '';
+    if (!ALLOWED_TYPES[contentType]) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Only image files are allowed (png, jpg, gif, webp, svg)' }));
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    let aborted = false;
+
+    req.on('data', (chunk) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_SIZE) {
+        aborted = true;
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'File too large. Maximum size is 10MB.' }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (aborted) return;
+      const body = Buffer.concat(chunks);
+
+      const ext = ALLOWED_TYPES[contentType];
+      const filename = `img-${Date.now()}${ext}`;
+      const filePath = resolve(uploadsDir, filename);
+      writeFileSync(filePath, body);
+
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(JSON.stringify({ filename, path: filePath, url: `/uploads/${filename}` }));
+    });
+    return;
+  }
+
+  // CORS preflight for uploads
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
+
+  res.writeHead(404);
+  res.end('Not found');
 });
 
 // WebSocket server attaches to HTTP server

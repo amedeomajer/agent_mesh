@@ -8,6 +8,7 @@ interface RegisteredAgent {
 
 export class Registry {
   private agents = new Map<string, RegisteredAgent>();
+  private viewers = new Set<WebSocket>();
 
   add(name: string, ws: WebSocket): boolean {
     if (this.agents.has(name)) {
@@ -50,5 +51,17 @@ export class Registry {
       }
     }
     return result;
+  }
+
+  addViewer(ws: WebSocket): void {
+    this.viewers.add(ws);
+  }
+
+  removeViewer(ws: WebSocket): void {
+    this.viewers.delete(ws);
+  }
+
+  allViewers(): WebSocket[] {
+    return Array.from(this.viewers);
   }
 }

@@ -166,6 +166,74 @@
         word-break: break-word;
       }
 
+      .msg .content code {
+        background: rgba(124, 111, 247, 0.12);
+        border: 1px solid rgba(124, 111, 247, 0.25);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 0.92em;
+      }
+
+      .msg .content .code-block-wrapper {
+        margin: 6px 0;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .msg .content .code-block-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #1e1f2a;
+        padding: 4px 10px;
+        cursor: pointer;
+        user-select: none;
+        font-size: 0.8em;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .msg .content .code-block-header:hover {
+        background: var(--bg-hover);
+      }
+
+      .msg .content .code-block-header .toggle-icon {
+        transition: transform 0.2s;
+      }
+
+      .msg .content .code-block-wrapper.collapsed .toggle-icon {
+        transform: rotate(-90deg);
+      }
+
+      .msg .content .code-block-wrapper.collapsed pre {
+        display: none;
+      }
+
+      .msg .content pre {
+        background: #191a22;
+        padding: 12px 14px;
+        margin: 0;
+        overflow-x: auto;
+        white-space: pre;
+        line-height: 1.45;
+      }
+
+      .msg .content pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.9em;
+      }
+
+      .msg .content pre .code-lang {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.8em;
+        margin-bottom: 6px;
+        user-select: none;
+      }
+
       .msg.system {
         color: var(--text-muted);
         font-style: italic;
@@ -794,6 +862,44 @@
         return div.innerHTML;
       }
 
+      function renderMarkdown(text) {
+        // Process fenced code blocks first: ```lang\n...\n```
+        const parts = [];
+        const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+        let lastIdx = 0;
+        let m;
+
+        while ((m = codeBlockRegex.exec(text)) !== null) {
+          if (m.index > lastIdx) {
+            parts.push({ type: "text", value: text.slice(lastIdx, m.index) });
+          }
+          parts.push({ type: "codeblock", lang: m[1], value: m[2] });
+          lastIdx = m.index + m[0].length;
+        }
+        if (lastIdx < text.length) {
+          parts.push({ type: "text", value: text.slice(lastIdx) });
+        }
+
+        return parts
+          .map((p) => {
+            if (p.type === "codeblock") {
+              const langLabel = p.lang
+                ? `<span class="code-lang">${esc(p.lang)}</span>`
+                : "";
+              const lines = p.value.split("\n").length;
+              const collapsed = lines > 10 ? " collapsed" : "";
+              const label = p.lang || "code";
+              return `<div class="code-block-wrapper${collapsed}"><div class="code-block-header" onclick="this.parentElement.classList.toggle('collapsed')"><span>${esc(label)} · ${lines} lines</span><span class="toggle-icon">▼</span></div><pre><code>${langLabel}${esc(p.value)}</code></pre></div>`;
+            }
+            // For text parts, handle inline code: `...`
+            return esc(p.value).replace(
+              /`([^`]+)`/g,
+              "<code>$1</code>"
+            );
+          })
+          .join("");
+      }
+
       function renderContent(content) {
         // Split content into text and image parts
         const imageRegex = /\[image:(\/uploads\/[^\]]+)\]/g;
@@ -805,7 +911,7 @@
           // Add text before the image
           if (match.index > lastIndex) {
             const textBefore = content.slice(lastIndex, match.index);
-            result += `<span class="content">${esc(textBefore)}</span>`;
+            result += `<span class="content">${renderMarkdown(textBefore)}</span>`;
           }
           // Add the image
           const url = match[1];
@@ -816,12 +922,12 @@
         // Add remaining text
         if (lastIndex < content.length) {
           const remaining = content.slice(lastIndex);
-          result += `<span class="content">${esc(remaining)}</span>`;
+          result += `<span class="content">${renderMarkdown(remaining)}</span>`;
         }
 
-        // If no images found, just return escaped text
+        // If no images found, just return markdown-rendered text
         if (lastIndex === 0) {
-          return `<span class="content">${esc(content)}</span>`;
+          return `<span class="content">${renderMarkdown(content)}</span>`;
         }
 
         return result;

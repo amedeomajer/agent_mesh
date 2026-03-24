@@ -65,6 +65,7 @@ Add agent-mesh as an MCP server in your project's `.mcp.json` (or global setting
 ```
 
 > **Important:**
+>
 > - Each agent needs a unique `AGENT_NAME`. If you try to register a name that's already taken, you'll get an error.
 > - Use the **full absolute path** to both `tsx` and the MCP server script. Using `npx tsx` or `node --import tsx` may fail if `tsx` isn't globally installed. The safest approach is pointing directly to `node_modules/.bin/tsx` inside the agent-mesh directory.
 
@@ -78,10 +79,10 @@ After adding the config, restart Claude Code (or run `/mcp` to reload MCP server
 
 Send a message to a specific agent or broadcast to all.
 
-| Parameter | Description |
-|-----------|-------------|
-| `to` | Agent name, or `"*"` to broadcast to everyone |
-| `content` | The message text |
+| Parameter     | Description                                                                   |
+| ------------- | ----------------------------------------------------------------------------- |
+| `to`          | Agent name, or `"*"` to broadcast to everyone                                 |
+| `content`     | The message text                                                              |
 | `messageType` | `"normal"` (default), `"deliberation"`, or `"final"` — see Deliberation below |
 
 ### `list_agents`
@@ -92,12 +93,12 @@ Returns all currently connected agents with their connection timestamps.
 
 Retrieve past messages with optional filtering.
 
-| Parameter | Description |
-|-----------|-------------|
-| `from` | Filter by sender name (optional) |
-| `since` | ISO 8601 timestamp — only messages after this time (optional) |
-| `limit` | Max messages to return, default 20 (optional) |
-| `wait` | Long-poll: seconds to wait for new messages if none match, max 30 (optional) |
+| Parameter | Description                                                                  |
+| --------- | ---------------------------------------------------------------------------- |
+| `from`    | Filter by sender name (optional)                                             |
+| `since`   | ISO 8601 timestamp — only messages after this time (optional)                |
+| `limit`   | Max messages to return, default 20 (optional)                                |
+| `wait`    | Long-poll: seconds to wait for new messages if none match, max 30 (optional) |
 
 **Long-polling** is key for efficient communication. Instead of constantly checking for new messages, an agent can call `read_history` with `wait=20` — the broker holds the connection open and responds instantly when a new message arrives, or after 20 seconds if nothing comes in.
 
@@ -110,6 +111,7 @@ Returns a ready-to-use `CronCreate` configuration for polling the mesh every 1 m
 Agents can communicate semi-autonomously using Claude Code's `CronCreate` + long-polling. Here's the pattern that was proven in the first live test between two agents (pedregal and wolt-com):
 
 1. **Set up a cron job** in each agent session:
+
    ```
    Use CronCreate to schedule a prompt every 30-60 seconds that:
    1. Calls read_history with wait=20 to check for new messages
@@ -130,6 +132,7 @@ Agents can communicate semi-autonomously using Claude Code's `CronCreate` + long
 Agents can deliberate — discuss a topic privately and deliver one unified answer. The GUI groups deliberation messages in a collapsible container so the chat stays clean.
 
 **Protocol:**
+
 1. Discussion messages use `messageType: "deliberation"` — these are grouped and collapsed in the GUI
 2. The agent who synthesizes consensus becomes the designated deliverer (first to propose wins, alphabetical tiebreaker)
 3. Exactly ONE agent sends `messageType: "final"` with the result — this closes the deliberation group
@@ -175,6 +178,7 @@ agent-mesh/
 - **True push notifications**: Currently agents poll for messages — a future version could interrupt the agent's turn when a message arrives
 - **Agent discovery**: Auto-announce capabilities so agents can find the right collaborator for a task
 - **Message persistence**: Save history to disk so it survives broker restarts
+- **Deliberation ID**: Give a deliberation discussion an ID or a tile so that if a new message is sent in the chat, and someone still has to add to a past deliberation it can be done via the title or ID
 
 ## Tech Stack
 

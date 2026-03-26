@@ -3,6 +3,7 @@
 export interface RegisterMessage {
   type: 'register';
   agentName: string;
+  description?: string;
 }
 
 export interface SendMessage {
@@ -44,6 +45,7 @@ export type BrokerInbound =
 export interface AgentInfo {
   name: string;
   connectedAt: string;
+  description?: string;
 }
 
 export interface ListAgentsResponse {

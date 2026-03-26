@@ -1,60 +1,68 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import WebSocket from 'ws';
-import { DEFAULT_BROKER_URL } from '../shared/constants.js';
-import type { BrokerOutbound } from '../shared/protocol.js';
-import { toolDefinitions, handleToolCall, resolvePending } from './tools.js';
-import { pushChannelNotification } from './channel.js';
+} from "@modelcontextprotocol/sdk/types.js";
+import WebSocket from "ws";
+import { DEFAULT_BROKER_URL } from "../shared/constants.js";
+import type { BrokerOutbound } from "../shared/protocol.js";
+import { toolDefinitions, handleToolCall, resolvePending } from "./tools.js";
+import { pushChannelNotification } from "./channel.js";
 
 const AGENT_NAME = process.env.AGENT_NAME;
+const AGENT_DESCRIPTION = process.env.AGENT_DESCRIPTION;
 const BROKER_URL = process.env.BROKER_URL || DEFAULT_BROKER_URL;
 
 if (!AGENT_NAME) {
-  process.stderr.write('AGENT_NAME environment variable is required\n');
+  process.stderr.write("AGENT_NAME environment variable is required\n");
   process.exit(1);
 }
 
 // 1. Create the MCP server with Channel capability
 const mcp = new Server(
-  { name: 'agent-mesh', version: '0.1.0' },
+  { name: "agent-mesh", version: "0.1.0" },
   {
     capabilities: {
-      experimental: { 'claude/channel': {} },
+      experimental: { "claude/channel": {} },
       tools: {},
     },
     instructions:
       `You are connected to the agent-mesh network as "${AGENT_NAME}". ` +
       'Messages from other agents arrive as <channel source="agent-mesh" from="...">. ' +
-      'Use the send_message tool to reply. Use list_agents to see who is online. ' +
-      'Use read_history to catch up on messages you may have missed.',
+      "Use the send_message tool to reply. Use list_agents to see who is online. " +
+      "Use read_history to catch up on messages you may have missed." +
+      "Use start_polling right now so you can participate in the current conversation",
   },
 );
 
 // 2. Connect to broker via WebSocket
 const ws = new WebSocket(BROKER_URL);
 
-ws.on('open', () => {
-  ws.send(JSON.stringify({ type: 'register', agentName: AGENT_NAME }));
+ws.on("open", () => {
+  ws.send(
+    JSON.stringify({
+      type: "register",
+      agentName: AGENT_NAME,
+      ...(AGENT_DESCRIPTION ? { description: AGENT_DESCRIPTION } : {}),
+    }),
+  );
   process.stderr.write(`[agent-mesh] Connected to broker as "${AGENT_NAME}"\n`);
 });
 
-ws.on('error', (err) => {
+ws.on("error", (err) => {
   process.stderr.write(
     `[agent-mesh] Broker connection error: ${err.message}\n` +
       `Is the broker running? Start it with: npm run broker\n`,
   );
 });
 
-ws.on('close', () => {
-  process.stderr.write('[agent-mesh] Disconnected from broker\n');
+ws.on("close", () => {
+  process.stderr.write("[agent-mesh] Disconnected from broker\n");
 });
 
 // 3. Handle incoming messages from the broker
-ws.on('message', (raw) => {
+ws.on("message", (raw) => {
   let msg: BrokerOutbound;
   try {
     msg = JSON.parse(String(raw));
@@ -68,7 +76,7 @@ ws.on('message', (raw) => {
   }
 
   // If it's a delivered message, push it to Claude via Channel notification
-  if (msg.type === 'deliver') {
+  if (msg.type === "deliver") {
     pushChannelNotification(mcp, msg);
   }
 });

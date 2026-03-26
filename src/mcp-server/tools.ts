@@ -142,7 +142,9 @@ export async function handleToolCall(
         return text('No other agents are connected.');
       }
       const lines = resp.agents.map(
-        (a) => `- ${a.name} (since ${a.connectedAt})`,
+        (a) => a.description
+          ? `- ${a.name}: ${a.description} (since ${a.connectedAt})`
+          : `- ${a.name} (since ${a.connectedAt})`,
       );
       return text(`Connected agents:\n${lines.join('\n')}`);
     }

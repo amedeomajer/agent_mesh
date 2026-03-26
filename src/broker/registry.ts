@@ -4,17 +4,18 @@ import type { AgentInfo } from '../shared/protocol.js';
 interface RegisteredAgent {
   ws: WebSocket;
   connectedAt: string;
+  description?: string;
 }
 
 export class Registry {
   private agents = new Map<string, RegisteredAgent>();
   private viewers = new Set<WebSocket>();
 
-  add(name: string, ws: WebSocket): boolean {
+  add(name: string, ws: WebSocket, description?: string): boolean {
     if (this.agents.has(name)) {
       return false; // name already taken
     }
-    this.agents.set(name, { ws, connectedAt: new Date().toISOString() });
+    this.agents.set(name, { ws, connectedAt: new Date().toISOString(), description });
     return true;
   }
 
@@ -40,6 +41,7 @@ export class Registry {
     return Array.from(this.agents.entries()).map(([name, agent]) => ({
       name,
       connectedAt: agent.connectedAt,
+      ...(agent.description ? { description: agent.description } : {}),
     }));
   }
 

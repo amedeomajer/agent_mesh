@@ -164,7 +164,7 @@ wss.on('connection', (ws: WebSocket) => {
 
     // Agent registration
     if (msg.type === 'register') {
-      const ok = registry.add(msg.agentName, ws);
+      const ok = registry.add(msg.agentName, ws, msg.description);
       if (!ok) {
         ws.send(
           JSON.stringify({

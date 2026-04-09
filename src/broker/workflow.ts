@@ -139,14 +139,132 @@ export class WorkflowManager {
     });
   }
 
-  private handleAssign(_senderName: string, senderWs: WebSocket, msg: WorkflowAssignRequest): void {
-    // Stub — implemented in Plan 3
-    this.sendError(senderWs, msg.requestId, 'WORKFLOW_NOT_FOUND', 'Not implemented yet');
+  private handleAssign(senderName: string, senderWs: WebSocket, msg: WorkflowAssignRequest): void {
+    if (!this.workflow || this.workflow.workflowId !== msg.workflowId) {
+      return this.sendError(senderWs, msg.requestId, 'WORKFLOW_NOT_FOUND', 'Workflow not found');
+    }
+
+    const role = this.registry.getRole(senderName);
+    if (role !== 'orchestrator') {
+      return this.sendError(senderWs, msg.requestId, 'NOT_AUTHORIZED', 'Only orchestrators can assign tasks');
+    }
+
+    const task = this.workflow.tasks.find(t => t.id === msg.taskId);
+    if (!task) {
+      return this.sendError(senderWs, msg.requestId, 'TASK_NOT_FOUND', `Task not found: ${msg.taskId}`);
+    }
+
+    const assigneeWs = this.registry.get(msg.assignee);
+    if (!assigneeWs) {
+      return this.sendError(senderWs, msg.requestId, 'AGENT_OFFLINE', `Agent is offline: ${msg.assignee}`);
+    }
+
+    const assigneeRole = this.registry.getRole(msg.assignee);
+    const requiredRole = msg.phase === 'produce' ? task.produce.role : task.review?.role;
+    if (assigneeRole !== requiredRole) {
+      return this.sendError(senderWs, msg.requestId, 'AGENT_ROLE_MISMATCH',
+        `Agent "${msg.assignee}" has role "${assigneeRole}", task requires "${requiredRole}"`);
+    }
+
+    task.status = msg.phase === 'produce' ? 'producing' : 'reviewing';
+    task.assignee = msg.assignee;
+    if (msg.phase === 'produce' && task.iteration === 0) {
+      task.iteration = 1;
+    }
+
+    this.workflow.updatedAt = new Date().toISOString();
+    this.persist();
+
+    const notification: WorkflowNotification = {
+      type: 'workflow:notification',
+      workflowId: this.workflow.workflowId,
+      taskId: task.id,
+      phase: msg.phase,
+      iteration: task.iteration,
+      context: {
+        branch: this.workflow.config.branch || 'main',
+        baseBranch: this.workflow.config.baseBranch || 'main',
+        description: task.description,
+        produceType: task.produce.type as 'plan' | 'implement',
+        prompt: msg.phase === 'produce' ? task.produce.prompt : task.review?.prompt,
+        priorFeedback: task.lastFeedback,
+        files: task.files,
+      },
+    };
+
+    const delivery: DeliverMessage = {
+      type: 'deliver',
+      id: uuid(),
+      from: 'workflow',
+      to: msg.assignee,
+      content: JSON.stringify(notification),
+      timestamp: new Date().toISOString(),
+    };
+
+    this.send(assigneeWs, delivery);
+    this.broadcastStatus();
+
+    this.send(senderWs, {
+      type: 'workflow:assign_response',
+      requestId: msg.requestId,
+      ok: true,
+    });
   }
 
   private handleComplete(_senderName: string, senderWs: WebSocket, msg: WorkflowCompleteRequest): void {
-    // Stub — implemented in Plan 3
-    this.sendError(senderWs, msg.requestId, 'WORKFLOW_NOT_FOUND', 'Not implemented yet');
+    if (!this.workflow || this.workflow.workflowId !== msg.workflowId) {
+      return this.sendError(senderWs, msg.requestId, 'WORKFLOW_NOT_FOUND', 'Workflow not found');
+    }
+
+    const task = this.workflow.tasks.find(t => t.id === msg.taskId);
+    if (!task) {
+      return this.sendError(senderWs, msg.requestId, 'TASK_NOT_FOUND', `Task not found: ${msg.taskId}`);
+    }
+
+    if (msg.result === 'done' && task.status !== 'producing') {
+      return this.sendError(senderWs, msg.requestId, 'INVALID_STATE_TRANSITION',
+        `Cannot complete with 'done': task is '${task.status}', expected 'producing'`);
+    }
+    if ((msg.result === 'approved' || msg.result === 'changes_requested') && task.status !== 'reviewing') {
+      return this.sendError(senderWs, msg.requestId, 'INVALID_STATE_TRANSITION',
+        `Cannot complete with '${msg.result}': task is '${task.status}', expected 'reviewing'`);
+    }
+
+    task.assignee = undefined;
+    task.lastResult = msg.result;
+
+    if (msg.result === 'done') {
+      task.status = task.review ? 'pending' : 'done';
+      task.lastFeedback = undefined;
+    } else if (msg.result === 'approved') {
+      task.status = 'done';
+    } else if (msg.result === 'changes_requested') {
+      task.status = 'pending';
+      task.lastFeedback = msg.summary;
+      task.iteration++;
+    }
+
+    this.workflow.updatedAt = new Date().toISOString();
+
+    if (this.workflow.tasks.every(t => t.status === 'done')) {
+      this.workflow.status = 'completed';
+    }
+
+    if (task.iteration >= MAX_WORKFLOW_ITERATIONS) {
+      this.broadcastEscalation(task);
+    }
+
+    this.persist();
+    this.broadcastStatus();
+    this.notifyOrchestrator(
+      `Task "${task.id}" completed: ${msg.result}. Summary: ${msg.summary}`,
+    );
+
+    this.send(senderWs, {
+      type: 'workflow:complete_response',
+      requestId: msg.requestId,
+      ok: true,
+    });
   }
 
   private handleStatus(senderWs: WebSocket, msg: WorkflowStatusRequest): void {
@@ -239,6 +357,44 @@ export class WorkflowManager {
       ...(details ? { details } : {}),
     };
     this.send(ws, error);
+  }
+
+  private broadcastEscalation(task: WorkflowTaskState): void {
+    const msg = {
+      type: 'system_event',
+      event: 'workflow_escalation',
+      agentName: '',
+      timestamp: new Date().toISOString(),
+      agents: this.registry.list(),
+      details: {
+        taskId: task.id,
+        iteration: task.iteration,
+        message: `Task "${task.id}" stuck in review loop (${task.iteration} iterations). Intervene?`,
+      },
+    };
+    for (const ws of this.registry.allViewers()) {
+      this.send(ws, msg);
+    }
+  }
+
+  private notifyOrchestrator(message: string): void {
+    if (!this.workflow) return;
+    const orchestratorWs = this.registry.get(this.workflow.orchestrator);
+    if (!orchestratorWs) return;
+    const delivery: DeliverMessage = {
+      type: 'deliver',
+      id: uuid(),
+      from: 'workflow',
+      to: this.workflow.orchestrator,
+      content: JSON.stringify({
+        type: 'workflow:task_update',
+        workflowId: this.workflow.workflowId,
+        message,
+        status: this.getStatusData(),
+      }),
+      timestamp: new Date().toISOString(),
+    };
+    this.send(orchestratorWs, delivery);
   }
 
   private send(ws: WebSocket, data: unknown): void {

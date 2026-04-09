@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws';
 import { v4 as uuid } from 'uuid';
 import type {
+  AgentRole,
   BrokerOutbound,
   ListAgentsResponse,
   ReadHistoryResponse,
@@ -77,6 +78,106 @@ export const toolDefinitions = [
     },
   },
 ];
+
+const orchestratorTools = [
+  {
+    name: 'workflow_create',
+    description: 'Create a new workflow from a YAML plan file. Validates the plan, creates workflow state, and returns the workflow ID with initial status.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        planPath: {
+          type: 'string',
+          description: 'Absolute path to the YAML workflow plan file',
+        },
+      },
+      required: ['planPath'],
+    },
+  },
+  {
+    name: 'workflow_assign',
+    description: 'Assign a workflow task to an agent for either produce or review phase. The broker validates role match and delivers a context-rich notification to the assignee.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        workflowId: { type: 'string', description: 'The workflow ID' },
+        taskId: { type: 'string', description: 'The task ID to assign' },
+        phase: {
+          type: 'string',
+          enum: ['produce', 'review'],
+          description: 'Which phase to assign: produce (create output) or review (check output)',
+        },
+        assignee: { type: 'string', description: 'Name of the agent to assign to' },
+      },
+      required: ['workflowId', 'taskId', 'phase', 'assignee'],
+    },
+  },
+  {
+    name: 'workflow_status',
+    description: 'Get the current status of a workflow including all task states, assignees, and iteration counts.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        workflowId: { type: 'string', description: 'The workflow ID' },
+      },
+      required: ['workflowId'],
+    },
+  },
+  {
+    name: 'workflow_cancel',
+    description: 'Cancel a running workflow. In-progress tasks are stalled. A cancelled workflow allows creating a new one.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        workflowId: { type: 'string', description: 'The workflow ID' },
+        reason: { type: 'string', description: 'Optional reason for cancellation' },
+      },
+      required: ['workflowId'],
+    },
+  },
+];
+
+const workerStatusTool = {
+  name: 'workflow_status',
+  description: 'Get the current status of a workflow including all task states, assignees, and iteration counts.',
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      workflowId: { type: 'string', description: 'The workflow ID' },
+    },
+    required: ['workflowId'],
+  },
+};
+
+const workerTools = [
+  {
+    name: 'workflow_complete',
+    description:
+      'Report completion of an assigned workflow task. Use result "done" after producing output, "approved" after reviewing acceptable work, or "changes_requested" with specific actionable feedback.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        workflowId: { type: 'string', description: 'The workflow ID' },
+        taskId: { type: 'string', description: 'The task ID being completed' },
+        result: {
+          type: 'string',
+          enum: ['done', 'approved', 'changes_requested'],
+          description: 'done = production complete, approved = review passed, changes_requested = needs revision',
+        },
+        summary: { type: 'string', description: 'Summary of what was done or specific feedback' },
+        branch: { type: 'string', description: 'Git branch where work was committed' },
+      },
+      required: ['workflowId', 'taskId', 'result', 'summary', 'branch'],
+    },
+  },
+  workerStatusTool,
+];
+
+export function getToolDefinitions(role?: AgentRole) {
+  if (!role) return [...toolDefinitions];
+  if (role === 'orchestrator') return [...toolDefinitions, ...orchestratorTools];
+  return [...toolDefinitions, ...workerTools];
+}
 
 // Pending request-response tracking
 const pending = new Map<
@@ -180,6 +281,98 @@ export async function handleToolCall(
         `recurring: ${cronConfig.recurring}\n\n` +
         `This will check for new messages every 1 minute.`,
       );
+    }
+
+    case 'workflow_create': {
+      const resp = await request(ws, {
+        type: 'workflow:create',
+        planPath: args.planPath as string,
+      });
+      if (resp.type === 'workflow:error') {
+        const err = resp as any;
+        return text(`Workflow creation failed: [${err.code}] ${err.message}`);
+      }
+      const createResp = resp as any;
+      const tasks = createResp.status.tasks.map(
+        (t: any) => `  - ${t.id}: ${t.status}`,
+      ).join('\n');
+      return text(
+        `Workflow created: ${createResp.workflowId}\n` +
+        `Status: ${createResp.status.status}\n` +
+        `Tasks:\n${tasks}`,
+      );
+    }
+
+    case 'workflow_assign': {
+      const resp = await request(ws, {
+        type: 'workflow:assign',
+        workflowId: args.workflowId as string,
+        taskId: args.taskId as string,
+        phase: args.phase as string,
+        assignee: args.assignee as string,
+      });
+      if (resp.type === 'workflow:error') {
+        const err = resp as any;
+        return text(`Assignment failed: [${err.code}] ${err.message}`);
+      }
+      return text(`Task "${args.taskId}" assigned to "${args.assignee}" for ${args.phase}.`);
+    }
+
+    case 'workflow_complete': {
+      const resp = await request(ws, {
+        type: 'workflow:complete',
+        workflowId: args.workflowId as string,
+        taskId: args.taskId as string,
+        result: args.result as string,
+        summary: args.summary as string,
+        branch: args.branch as string,
+      });
+      if (resp.type === 'workflow:error') {
+        const err = resp as any;
+        return text(`Completion failed: [${err.code}] ${err.message}`);
+      }
+      return text(`Task "${args.taskId}" completed with result: ${args.result}.`);
+    }
+
+    case 'workflow_status': {
+      const resp = await request(ws, {
+        type: 'workflow:status',
+        workflowId: args.workflowId as string,
+      });
+      if (resp.type === 'workflow:error') {
+        const err = resp as any;
+        return text(`Status query failed: [${err.code}] ${err.message}`);
+      }
+      const statusResp = resp as any;
+      const d = statusResp.data;
+      const tasks = d.tasks.map(
+        (t: any) => {
+          let line = `  - ${t.id}: ${t.status}`;
+          if (t.assignee) line += ` (assigned: ${t.assignee})`;
+          if (t.iteration > 0) line += ` [iter ${t.iteration}]`;
+          if (t.lastResult) line += ` last: ${t.lastResult}`;
+          return line;
+        },
+      ).join('\n');
+      return text(
+        `Workflow: ${d.name}\n` +
+        `ID: ${d.workflowId}\n` +
+        `Status: ${d.status}\n` +
+        `Tasks:\n${tasks}`,
+      );
+    }
+
+    case 'workflow_cancel': {
+      const resp = await request(ws, {
+        type: 'workflow:cancel',
+        workflowId: args.workflowId as string,
+        ...(args.reason ? { reason: args.reason as string } : {}),
+      });
+      if (resp.type === 'workflow:error') {
+        const err = resp as any;
+        return text(`Cancel failed: [${err.code}] ${err.message}`);
+      }
+      return text(`Workflow cancelled.`);
     }
 
     default:

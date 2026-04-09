@@ -11,5 +11,5 @@
     "declaration": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "bin/**/*"]
+  "include": ["src/**/*", "bin/**/*", "tests/**/*", "vitest.config.ts"]
 }

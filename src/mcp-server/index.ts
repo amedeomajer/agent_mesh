@@ -6,12 +6,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
 import { DEFAULT_BROKER_URL } from "../shared/constants.js";
-import type { BrokerOutbound } from "../shared/protocol.js";
-import { toolDefinitions, handleToolCall, resolvePending } from "./tools.js";
+import type { AgentRole, BrokerOutbound } from "../shared/protocol.js";
+import { getToolDefinitions, handleToolCall, resolvePending } from "./tools.js";
 import { pushChannelNotification } from "./channel.js";
 
 const AGENT_NAME = process.env.AGENT_NAME;
 const AGENT_DESCRIPTION = process.env.AGENT_DESCRIPTION;
+const AGENT_ROLE = process.env.AGENT_ROLE as AgentRole | undefined;
 const BROKER_URL = process.env.BROKER_URL || DEFAULT_BROKER_URL;
 
 if (!AGENT_NAME) {
@@ -28,11 +29,13 @@ const mcp = new Server(
       tools: {},
     },
     instructions:
-      `You are connected to the agent-mesh network as "${AGENT_NAME}". ` +
+      `You are connected to the agent-mesh network as "${AGENT_NAME}"` +
+      (AGENT_ROLE ? ` with role "${AGENT_ROLE}"` : '') + '. ' +
       'Messages from other agents arrive as <channel source="agent-mesh" from="...">. ' +
+      'Messages from "workflow" sender contain JSON workflow notifications — parse them to get task assignments. ' +
       "Use the send_message tool to reply. Use list_agents to see who is online. " +
-      "Use read_history to catch up on messages you may have missed." +
-      "Use start_polling right now so you can participate in the current conversation",
+      "Use read_history to catch up on messages you may have missed. " +
+      "Use start_polling right now so you can participate in the current conversation.",
   },
 );
 
@@ -45,6 +48,7 @@ ws.on("open", () => {
       type: "register",
       agentName: AGENT_NAME,
       ...(AGENT_DESCRIPTION ? { description: AGENT_DESCRIPTION } : {}),
+      ...(AGENT_ROLE ? { role: AGENT_ROLE } : {}),
     }),
   );
   process.stderr.write(`[agent-mesh] Connected to broker as "${AGENT_NAME}"\n`);
@@ -83,7 +87,7 @@ ws.on("message", (raw) => {
 
 // 4. Register MCP tool handlers
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: toolDefinitions,
+  tools: getToolDefinitions(AGENT_ROLE),
 }));
 
 mcp.setRequestHandler(CallToolRequestSchema, async (request) => {

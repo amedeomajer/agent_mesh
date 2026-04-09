@@ -514,6 +514,121 @@
       #messages::-webkit-scrollbar-thumb:hover {
         background: var(--text-muted);
       }
+
+      /* ── Workflow Sidebar ── */
+      .main-content {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      .workflow-sidebar {
+        width: 220px;
+        border-right: 1px solid var(--border);
+        background: var(--bg-surface);
+        overflow-y: auto;
+        padding: 12px;
+        display: none;
+        flex-shrink: 0;
+      }
+
+      .workflow-sidebar.active {
+        display: block;
+      }
+
+      .workflow-sidebar h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+      }
+
+      .workflow-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 8px;
+        word-break: break-word;
+      }
+
+      .workflow-status-badge {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 8px;
+        display: inline-block;
+        margin-bottom: 12px;
+      }
+
+      .workflow-status-badge.running { background: #7c6ff722; color: #7c6ff7; }
+      .workflow-status-badge.completed { background: #4ade8022; color: #4ade80; }
+      .workflow-status-badge.cancelled { background: #f8717122; color: #f87171; }
+      .workflow-status-badge.failed { background: #f8717122; color: #f87171; }
+      .workflow-status-badge.paused { background: #d19a6622; color: #d19a66; }
+
+      .wf-task {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+
+      .wf-task:last-child {
+        border-bottom: none;
+      }
+
+      .wf-task-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .wf-task-icon {
+        flex-shrink: 0;
+        width: 14px;
+        text-align: center;
+      }
+
+      .wf-task-id {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .wf-task-detail {
+        font-size: 11px;
+        color: var(--text-dim);
+        margin-left: 20px;
+        margin-top: 2px;
+      }
+
+      .wf-progress {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+
+      .wf-progress-bar {
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin-top: 4px;
+        overflow: hidden;
+      }
+
+      .wf-progress-fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+
+      .chat-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
     </style>
   </head>
   <body>
@@ -528,33 +643,41 @@
 
     <div class="drop-overlay" id="drop-overlay">Drop image here</div>
 
-    <div id="messages">
-      <div class="empty-state" id="empty">Connecting to broker...</div>
-    </div>
+    <div class="main-content">
+      <div class="workflow-sidebar" id="workflow-sidebar">
+        <h2>Workflow</h2>
+        <div id="wf-content">No active workflow</div>
+      </div>
+      <div class="chat-area">
+        <div id="messages">
+          <div class="empty-state" id="empty">Connecting to broker...</div>
+        </div>
 
-    <div class="image-preview" id="image-preview">
-      <img id="preview-img" src="" alt="preview" />
-      <span
-        id="preview-name"
-        style="font-size: 12px; color: var(--text-dim)"
-      ></span>
-      <button class="remove-btn" id="remove-preview">&times;</button>
-    </div>
+        <div class="image-preview" id="image-preview">
+          <img id="preview-img" src="" alt="preview" />
+          <span
+            id="preview-name"
+            style="font-size: 12px; color: var(--text-dim)"
+          ></span>
+          <button class="remove-btn" id="remove-preview">&times;</button>
+        </div>
 
-    <div class="input-area">
-      <label for="recipient">To:</label>
-      <select id="recipient">
-        <option value="*">everyone</option>
-      </select>
-      <textarea
-        id="input"
-        rows="1"
-        placeholder="Type a message..."
-        autocomplete="off"
-      ></textarea>
-      <button id="image-btn" title="Attach image">&#128247;</button>
-      <input type="file" id="file-input" accept="image/*" hidden />
-      <button id="send-btn" disabled>Send</button>
+        <div class="input-area">
+          <label for="recipient">To:</label>
+          <select id="recipient">
+            <option value="*">everyone</option>
+          </select>
+          <textarea
+            id="input"
+            rows="1"
+            placeholder="Type a message..."
+            autocomplete="off"
+          ></textarea>
+          <button id="image-btn" title="Attach image">&#128247;</button>
+          <input type="file" id="file-input" accept="image/*" hidden />
+          <button id="send-btn" disabled>Send</button>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -593,6 +716,7 @@
       let agents = [];
       let hasMessages = false;
       let currentDeliberation = null; // { groupEl, messagesEl, count }
+      let workflowData = null; // current WorkflowStatusData
 
       // ── WebSocket connection ──
       function connect() {
@@ -635,6 +759,11 @@
                   addMessage(m, true);
                 }
                 scrollToBottom();
+              }
+              break;
+            case "workflow:status_response":
+              if (msg.data) {
+                renderWorkflow(msg.data);
               }
               break;
           }
@@ -1050,6 +1179,61 @@
           }
         }
       });
+
+      // ── Workflow sidebar ──
+      const workflowSidebar = document.getElementById("workflow-sidebar");
+      const wfContent = document.getElementById("wf-content");
+
+      function renderWorkflow(data) {
+        workflowData = data;
+        workflowSidebar.classList.add("active");
+
+        const statusIcons = {
+          pending: "○",
+          producing: "●",
+          reviewing: "◐",
+          done: "✓",
+          stalled: "⚠",
+        };
+
+        const done = data.tasks.filter((t) => t.status === "done").length;
+        const total = data.tasks.length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        let html =
+          `<div class="workflow-name">${esc(data.name)}</div>` +
+          `<span class="workflow-status-badge ${data.status}">${data.status}</span>`;
+
+        for (const task of data.tasks) {
+          const icon = statusIcons[task.status] || "?";
+          const isStuck = task.iteration >= 5;
+          const iconClass = isStuck ? "stalled" : task.status;
+          let detail = task.status;
+          if (task.assignee) detail += ` → ${esc(task.assignee)}`;
+          if (task.iteration > 1) detail += ` · iter ${task.iteration}`;
+
+          html +=
+            `<div class="wf-task">` +
+            `<div class="wf-task-header">` +
+            `<span class="wf-task-icon">${icon}</span>` +
+            `<span class="wf-task-id">${esc(task.id)}</span>` +
+            `</div>` +
+            `<div class="wf-task-detail">${detail}</div>` +
+            `</div>`;
+        }
+
+        html +=
+          `<div class="wf-progress">` +
+          `Progress: ${done}/${total}` +
+          `<div class="wf-progress-bar"><div class="wf-progress-fill" style="width:${pct}%"></div></div>` +
+          `</div>`;
+
+        if (data.status === "completed" || data.status === "cancelled" || data.status === "failed") {
+          // Keep showing but could add a dismiss button later
+        }
+
+        wfContent.innerHTML = html;
+      }
 
       // ── Go ──
       connect();

@@ -1,0 +1,58 @@
+name: "Add user avatar feature"
+config:
+  onComplete: pr
+  branch: feat/user-avatar
+  baseBranch: main
+
+tasks:
+  - id: spec
+    description: "Design the avatar component API and data model. Define the database schema changes, API endpoints, component props, and file upload constraints."
+    produce:
+      type: plan
+      role: orchestrator
+      prompt: "Focus on API surface, data model, and file constraints. Keep it concise."
+    review:
+      role: reviewer
+      prompt: "Check for completeness, security (file upload validation), and feasibility."
+
+  - id: impl-plan
+    description: "Write a detailed implementation plan from the approved spec. Break into small, testable steps."
+    produce:
+      type: plan
+      role: orchestrator
+      prompt: "Reference the spec. Each step should be independently testable."
+    review:
+      role: reviewer
+      prompt: "Check that steps are ordered correctly and nothing is missing."
+    dependsOn:
+      - spec
+
+  - id: implement-model
+    description: "Add avatar field to user model and create database migration."
+    produce:
+      type: implement
+      role: implementer
+      prompt: "Follow the implementation plan. Write tests first."
+    review:
+      role: reviewer
+      prompt: "Check migration safety, rollback support, and test coverage."
+    files:
+      - src/models/user.ts
+      - src/migrations/
+    dependsOn:
+      - impl-plan
+
+  - id: implement-ui
+    description: "Build the AvatarUpload component with preview and validation."
+    produce:
+      type: implement
+      role: implementer
+      prompt: "Follow the spec for constraints. Include accessibility attributes."
+    review:
+      role: reviewer
+      prompt: "Check file type validation, size limits, accessibility, and error states."
+    files:
+      - src/components/AvatarUpload.tsx
+      - src/components/AvatarUpload.test.tsx
+    dependsOn:
+      - impl-plan

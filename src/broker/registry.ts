@@ -1,21 +1,29 @@
 import type WebSocket from 'ws';
-import type { AgentInfo } from '../shared/protocol.js';
+import type { AgentInfo, AgentRole } from '../shared/protocol.js';
 
 interface RegisteredAgent {
   ws: WebSocket;
   connectedAt: string;
   description?: string;
+  role?: AgentRole;
+  capabilities?: string[];
 }
 
 export class Registry {
   private agents = new Map<string, RegisteredAgent>();
   private viewers = new Set<WebSocket>();
 
-  add(name: string, ws: WebSocket, description?: string): boolean {
+  add(name: string, ws: WebSocket, description?: string, role?: AgentRole, capabilities?: string[]): boolean {
     if (this.agents.has(name)) {
       return false; // name already taken
     }
-    this.agents.set(name, { ws, connectedAt: new Date().toISOString(), description });
+    this.agents.set(name, {
+      ws,
+      connectedAt: new Date().toISOString(),
+      description,
+      role,
+      capabilities,
+    });
     return true;
   }
 
@@ -42,7 +50,13 @@ export class Registry {
       name,
       connectedAt: agent.connectedAt,
       ...(agent.description ? { description: agent.description } : {}),
+      ...(agent.role ? { role: agent.role } : {}),
+      ...(agent.capabilities ? { capabilities: agent.capabilities } : {}),
     }));
+  }
+
+  getRole(name: string): AgentRole | undefined {
+    return this.agents.get(name)?.role;
   }
 
   allExcept(name: string): Array<{ name: string; ws: WebSocket }> {

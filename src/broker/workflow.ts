@@ -70,8 +70,22 @@ export class WorkflowManager {
     }
   }
 
-  handleAgentDisconnect(_agentName: string): void {
-    // Implemented in Plan 3
+  handleAgentDisconnect(agentName: string): void {
+    if (!this.workflow || this.workflow.status !== 'running') return;
+    let changed = false;
+    for (const task of this.workflow.tasks) {
+      if (task.assignee === agentName && (task.status === 'producing' || task.status === 'reviewing')) {
+        task.status = 'stalled';
+        task.assignee = undefined;
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.workflow.updatedAt = new Date().toISOString();
+      this.persist();
+      this.broadcastStatus();
+      this.notifyOrchestrator(`Task stalled: agent "${agentName}" disconnected`);
+    }
   }
 
   private handleCreate(senderName: string, senderWs: WebSocket, msg: WorkflowCreateRequest): void {

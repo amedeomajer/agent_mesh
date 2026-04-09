@@ -761,4 +761,92 @@ tasks:
       expect(notification).toBeDefined();
     });
   });
+
+  describe('handleAgentDisconnect', () => {
+    it('stalls tasks assigned to disconnected agent', () => {
+      const planPath = writePlan('plan.yaml', VALID_PLAN_YAML);
+      manager.handle('orch', orchWs as unknown as WebSocket, {
+        type: 'workflow:create',
+        requestId: 'cr',
+        planPath,
+      });
+      const cr = orchWs.sent.find((m: any) => m.type === 'workflow:create_response') as any;
+      const implWs = createMockWs();
+      registry.add('impl', implWs as unknown as WebSocket, undefined, 'implementer');
+
+      manager.handle('orch', orchWs as unknown as WebSocket, {
+        type: 'workflow:assign',
+        requestId: 'a1',
+        workflowId: cr.workflowId,
+        taskId: 'task1',
+        phase: 'produce',
+        assignee: 'impl',
+      });
+
+      manager.handleAgentDisconnect('impl');
+
+      const task = manager.getStatusData().tasks.find(t => t.id === 'task1');
+      expect(task?.status).toBe('stalled');
+      expect(task?.assignee).toBeUndefined();
+    });
+
+    it('does not affect tasks assigned to other agents', () => {
+      const planPath = writePlan('plan.yaml', VALID_PLAN_YAML);
+      manager.handle('orch', orchWs as unknown as WebSocket, {
+        type: 'workflow:create',
+        requestId: 'cr',
+        planPath,
+      });
+      const cr = orchWs.sent.find((m: any) => m.type === 'workflow:create_response') as any;
+      const implWs = createMockWs();
+      registry.add('impl', implWs as unknown as WebSocket, undefined, 'implementer');
+
+      manager.handle('orch', orchWs as unknown as WebSocket, {
+        type: 'workflow:assign',
+        requestId: 'a1',
+        workflowId: cr.workflowId,
+        taskId: 'task1',
+        phase: 'produce',
+        assignee: 'impl',
+      });
+
+      manager.handleAgentDisconnect('some-other-agent');
+
+      const task = manager.getStatusData().tasks.find(t => t.id === 'task1');
+      expect(task?.status).toBe('producing');
+      expect(task?.assignee).toBe('impl');
+    });
+
+    it('notifies orchestrator of stalled task', () => {
+      const planPath = writePlan('plan.yaml', VALID_PLAN_YAML);
+      manager.handle('orch', orchWs as unknown as WebSocket, {
+        type: 'workflow:create',
+        requestId: 'cr',
+        planPath,
+      });
+      const cr = orchWs.sent.find((m: any) => m.type === 'workflow:create_response') as any;
+      const implWs = createMockWs();
+      registry.add('impl', implWs as unknown as WebSocket, undefined, 'implementer');
+
+      manager.handle('orch', orchWs as unknown as WebSocket, {
+        type: 'workflow:assign',
+        requestId: 'a1',
+        workflowId: cr.workflowId,
+        taskId: 'task1',
+        phase: 'produce',
+        assignee: 'impl',
+      });
+
+      const orchSentBefore = orchWs.sent.length;
+      manager.handleAgentDisconnect('impl');
+
+      const newMsgs = orchWs.sent.slice(orchSentBefore);
+      const notification = newMsgs.find((m: any) => m.type === 'deliver' && m.from === 'workflow');
+      expect(notification).toBeDefined();
+    });
+
+    it('does nothing when no active workflow', () => {
+      manager.handleAgentDisconnect('anyone');
+    });
+  });
 });

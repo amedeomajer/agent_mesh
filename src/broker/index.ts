@@ -9,6 +9,7 @@ import { DEFAULT_PORT } from '../shared/constants.js';
 import { Registry } from './registry.js';
 import { History } from './history.js';
 import { Router } from './router.js';
+import { WorkflowManager } from './workflow.js';
 import { v4 as uuid } from 'uuid';
 
 const PORT = parseInt(process.env.BROKER_PORT || String(DEFAULT_PORT));
@@ -16,6 +17,7 @@ const PORT = parseInt(process.env.BROKER_PORT || String(DEFAULT_PORT));
 const registry = new Registry();
 const history = new History();
 const router = new Router(registry, history);
+const workflowManager = new WorkflowManager(registry);
 
 // Load the GUI HTML file
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -164,7 +166,7 @@ wss.on('connection', (ws: WebSocket) => {
 
     // Agent registration
     if (msg.type === 'register') {
-      const ok = registry.add(msg.agentName, ws, msg.description);
+      const ok = registry.add(msg.agentName, ws, msg.description, msg.role, msg.capabilities);
       if (!ok) {
         ws.send(
           JSON.stringify({
@@ -183,6 +185,16 @@ wss.on('connection', (ws: WebSocket) => {
     // Viewer sending a message or reading history
     if (isViewer && (msg.type === 'send' || msg.type === 'read_history')) {
       router.handle(msg.from || 'human', ws, msg);
+      return;
+    }
+
+    // Workflow message routing
+    if (msg.type.startsWith('workflow:')) {
+      if (!agentName && !isViewer) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Must register first' }));
+        return;
+      }
+      workflowManager.handle(agentName || 'human', ws, msg as any);
       return;
     }
 
@@ -205,6 +217,7 @@ wss.on('connection', (ws: WebSocket) => {
       registry.remove(agentName);
       console.log(`[-] ${agentName} disconnected`);
       router.broadcastSystemEvent('agent_disconnected', agentName);
+      workflowManager.handleAgentDisconnect(agentName);
     }
   });
 });

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "agent-mesh": {
+      "command": "npx",
+      "args": ["tsx", "/Users/michael/projects/agent_mesh/src/mcp-server/index.ts"],
+      "env": {
+        "AGENT_NAME": "orchestrator",
+        "AGENT_ROLE": "orchestrator",
+        "AGENT_DESCRIPTION": "Workflow orchestrator"
+      }
+    }
+  }
+}

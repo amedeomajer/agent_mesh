@@ -5,3 +5,7 @@ dist/
 *.js.map
 !bin/
 uploads/
+.mesh-history.json
+.mesh-workflows/
+.test-tmp/
+.test-integration-tmp/

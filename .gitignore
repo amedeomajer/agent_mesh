@@ -9,3 +9,5 @@ uploads/
 .mesh-workflows/
 .test-tmp/
 .test-integration-tmp/
+*.personal.md
+.claude/

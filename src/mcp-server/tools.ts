@@ -215,6 +215,9 @@ export async function handleToolCall(
     case 'send_message': {
       const to = args.to as string;
       const rawContent = args.content as string;
+      if (!rawContent || typeof rawContent !== 'string') {
+        return text('Error: content must be a non-empty string.');
+      }
       const messageType = (args.messageType as string) || 'normal';
       const content =
         messageType === 'deliberation' ? `[deliberation] ${rawContent}` :
@@ -269,9 +272,28 @@ export async function handleToolCall(
     }
 
     case 'start_polling': {
+      const flagPath = `/tmp/agent-mesh-${agentName}.flag`;
       const cronConfig = {
         cron: '* * * * *',
-        prompt: `Check the agent mesh for new messages using read_history. If there are new messages that are relevant to you or broadcast to everyone, respond appropriately. Be concise.`,
+        prompt: `Check for new agent-mesh messages using this exact sequence:
+
+1. Run this bash command to check for the flag file:
+   \`\`\`bash
+   cat "${flagPath}" 2>/dev/null && echo "FLAG_EXISTS" || echo "NO_FLAG"
+   \`\`\`
+
+2. If the output contains "NO_FLAG": stop here, do nothing.
+
+3. If the output contains "FLAG_EXISTS":
+   a. The output line before "FLAG_EXISTS" is an ISO 8601 timestamp (e.g. 2026-04-10T12:34:56.789Z). Save it as SINCE_TS.
+   b. Delete the flag file:
+      \`\`\`bash
+      rm -f "${flagPath}"
+      \`\`\`
+   c. Call read_history with since=SINCE_TS to fetch new messages.
+   d. If there are new messages relevant to you or broadcast to everyone, respond appropriately. Be concise.
+
+4. Fallback: if step 1 fails for any reason, call read_history with no arguments as a safety net.`,
         recurring: true,
       };
       return text(
@@ -279,7 +301,7 @@ export async function handleToolCall(
         `cron: "${cronConfig.cron}"\n` +
         `prompt: "${cronConfig.prompt}"\n` +
         `recurring: ${cronConfig.recurring}\n\n` +
-        `This will check for new messages every 1 minute.`,
+        `This will check for new messages every 1 minute, but only call read_history when a message has actually arrived.`,
       );
     }
 

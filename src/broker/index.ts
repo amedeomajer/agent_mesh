@@ -13,7 +13,6 @@ import { WorkflowManager } from './workflow.js';
 import { v4 as uuid } from 'uuid';
 
 const PORT = parseInt(process.env.BROKER_PORT || String(DEFAULT_PORT));
-
 const registry = new Registry();
 const history = new History();
 const router = new Router(registry, history);
@@ -117,7 +116,7 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // CORS preflight for uploads
+  // CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',

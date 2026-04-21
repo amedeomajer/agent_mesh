@@ -5,6 +5,7 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
+import { writeFileSync, existsSync } from "node:fs";
 import { DEFAULT_BROKER_URL } from "../shared/constants.js";
 import type { AgentRole, BrokerOutbound } from "../shared/protocol.js";
 import { getToolDefinitions, handleToolCall, resolvePending } from "./tools.js";
@@ -35,7 +36,14 @@ const mcp = new Server(
       'Messages from "workflow" sender contain JSON workflow notifications — parse them to get task assignments. ' +
       "Use the send_message tool to reply. Use list_agents to see who is online. " +
       "Use read_history to catch up on messages you may have missed. " +
-      "Use start_polling right now so you can participate in the current conversation.",
+      "Use start_polling right now so you can participate in the current conversation. " +
+      "CRITICAL: When you receive ANY message from the mesh (via <channel> notifications), you MUST ALWAYS reply using the send_message tool. " +
+      "NEVER just type your response in plain text — the sender cannot see your terminal output. " +
+      "Every reply to a mesh message MUST go through send_message, no exceptions. " +
+      "CRITICAL: Do NOT send a message just to confirm or echo what another agent already said. " +
+      "Only reply when you have new information, a decision, a question, or an action to report. " +
+      "Avoid messages like 'Confirmed!', 'Sounds good!', 'Agreed', or restating the previous agent's conclusion. " +
+      "If you have nothing new to add, stay silent.",
   },
 );
 
@@ -82,6 +90,18 @@ ws.on("message", (raw) => {
   // If it's a delivered message, push it to Claude via Channel notification
   if (msg.type === "deliver") {
     pushChannelNotification(mcp, msg);
+    try {
+      const flagPath = `/tmp/agent-mesh-${AGENT_NAME}.flag`;
+      // Only write if no flag exists yet — preserve the earliest timestamp
+      // so read_history with since= doesn't miss earlier messages
+      if (!existsSync(flagPath)) {
+        // Subtract 1ms so read_history(since=flagTimestamp) is inclusive of this message
+        const ts = new Date(new Date(msg.timestamp).getTime() - 1).toISOString();
+        writeFileSync(flagPath, ts, "utf8");
+      }
+    } catch {
+      // /tmp may be unavailable in sandboxed environments — not fatal
+    }
   }
 });
 

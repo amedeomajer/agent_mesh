@@ -285,7 +285,7 @@
         padding: 8px 10px;
         font-size: 13px;
         font-family: inherit;
-        width: 120px;
+        width: 125px;
         flex-shrink: 0;
       }
 
@@ -718,6 +718,37 @@
       let currentDeliberation = null; // { groupEl, messagesEl, count }
       let workflowData = null; // current WorkflowStatusData
 
+      // ── Notification sound (only when page is not visible) ──
+      // AudioContext must be created/resumed after a user gesture (browser autoplay policy)
+      let audioCtx = null;
+      document.addEventListener("click", () => {
+        if (!audioCtx) {
+          audioCtx = new AudioContext();
+        } else if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+      }, { once: false });
+
+      function playNotification() {
+        if (document.visibilityState === "visible") return;
+        if (!audioCtx || audioCtx.state === "suspended") return;
+        try {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+          osc.start(audioCtx.currentTime);
+          osc.stop(audioCtx.currentTime + 0.3);
+        } catch {
+          // Not fatal
+        }
+      }
+
       // ── WebSocket connection ──
       function connect() {
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -880,6 +911,7 @@
 
         if (!isHistory) {
           scrollToBottom();
+          playNotification();
         }
       }
 
@@ -1024,10 +1056,7 @@
               return `<div class="code-block-wrapper${collapsed}"><div class="code-block-header" onclick="this.parentElement.classList.toggle('collapsed')"><span>${esc(label)} · ${lines} lines</span><span class="toggle-icon">▼</span></div><pre><code>${langLabel}${esc(p.value)}</code></pre></div>`;
             }
             // For text parts, handle inline code: `...`
-            return esc(p.value).replace(
-              /`([^`]+)`/g,
-              "<code>$1</code>"
-            );
+            return esc(p.value).replace(/`([^`]+)`/g, "<code>$1</code>");
           })
           .join("");
       }

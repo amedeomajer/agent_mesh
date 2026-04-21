@@ -57,6 +57,7 @@ Add agent-mesh as an MCP server in your project's `.mcp.json` (or global setting
       "args": ["/path/to/agent-mesh/src/mcp-server/index.ts"],
       "env": {
         "AGENT_NAME": "my-agent",
+        "AGENT_DESCRIPTION": "Short description of what this agent does",
         "BROKER_URL": "ws://localhost:4200"
       }
     }
@@ -67,11 +68,48 @@ Add agent-mesh as an MCP server in your project's `.mcp.json` (or global setting
 > **Important:**
 >
 > - Each agent needs a unique `AGENT_NAME`. If you try to register a name that's already taken, you'll get an error.
+> - `AGENT_DESCRIPTION` (optional) shows up in `list_agents` output and as a tooltip in the GUI sidebar so other agents know what you specialize in.
 > - Use the **full absolute path** to both `tsx` and the MCP server script. Using `npx tsx` or `node --import tsx` may fail if `tsx` isn't globally installed. The safest approach is pointing directly to `node_modules/.bin/tsx` inside the agent-mesh directory.
 
 ### 4. Restart Claude Code
 
 After adding the config, restart Claude Code (or run `/mcp` to reload MCP servers). You should now have access to the mesh tools.
+
+## Agent-Assisted Setup (for other projects)
+
+Want to onboard another project onto the mesh? Open Claude Code **inside the `agent-mesh` repo** and ask:
+
+> "Set up agent-mesh for my project at `/absolute/path/to/project`, call it `agent-name`, description `what it does`."
+
+The agent should follow these steps:
+
+1. Make sure `node_modules` exists in this repo (`npm install` if not).
+2. Make sure the broker is running — `npm run broker` (leave running in a background terminal, or start it via a task).
+3. Create or update `<target-project>/.mcp.json` with the template below, substituting:
+   - `AGENT_NAME` — unique name for that project
+   - `AGENT_DESCRIPTION` — one-liner explaining the agent's specialty
+   - Absolute paths to `node_modules/.bin/tsx` and `src/mcp-server/index.ts` **inside this repo**
+4. Remind the user to restart Claude Code (or `/mcp`) in the target project.
+
+**Template to drop into `<target-project>/.mcp.json`:**
+
+```json
+{
+  "mcpServers": {
+    "agent-mesh": {
+      "command": "/absolute/path/to/agent-mesh/node_modules/.bin/tsx",
+      "args": ["/absolute/path/to/agent-mesh/src/mcp-server/index.ts"],
+      "env": {
+        "AGENT_NAME": "<agent-name>",
+        "AGENT_DESCRIPTION": "<short description>",
+        "BROKER_URL": "ws://localhost:4200"
+      }
+    }
+  }
+}
+```
+
+If the project already has an `.mcp.json`, merge the `agent-mesh` entry into the existing `mcpServers` object rather than overwriting the file.
 
 ## MCP Tools
 
@@ -106,19 +144,30 @@ Retrieve past messages with optional filtering.
 
 Returns a ready-to-use `CronCreate` configuration for polling the mesh every 1 minute. Call this once, then pass the config to `CronCreate`.
 
+The returned prompt uses the **flag-file notification system** (see below): instead of unconditionally calling `read_history` every tick, the cron first checks a tiny flag file written by the MCP server when a message actually arrives. No new message → no tool call, no token cost. When a message does arrive, the cron reads history since the flag timestamp and responds.
+
+## Flag-File Notification System
+
+Idle polling is expensive — every minute, every cron tick, a tool call round-trip. The flag-file system eliminates that cost:
+
+1. When the broker delivers a message, the MCP server writes `/tmp/agent-mesh-{AGENT_NAME}.flag` containing the broker's ISO 8601 timestamp.
+2. Only writes if the file doesn't exist yet — preserves the earliest timestamp so multi-message gaps aren't lost.
+3. The cron prompt checks the flag file with a cheap `cat`, and only calls `read_history` when a flag exists.
+4. After reading, the cron deletes the flag.
+
+Files involved: `src/mcp-server/index.ts` (write on `deliver`), `src/mcp-server/tools.ts` (`start_polling` prompt), `tests/mcp-server/flag-file.test.ts`.
+
 ## Autonomous Agent Chat
 
-Agents can communicate semi-autonomously using Claude Code's `CronCreate` + long-polling. Here's the pattern that was proven in the first live test between two agents (pedregal and wolt-com):
+Agents can communicate semi-autonomously using Claude Code's `CronCreate` + the flag-file notification system:
 
-1. **Set up a cron job** in each agent session:
+1. **Ask the agent to set up polling**:
 
    ```
-   Use CronCreate to schedule a prompt every 30-60 seconds that:
-   1. Calls read_history with wait=20 to check for new messages
-   2. Reads and responds to any new messages
+   Call the start_polling tool, then pass the returned config to CronCreate.
    ```
 
-2. **Messages flow automatically** — each agent's cron fires, picks up new messages via long-poll, and responds. The human can sit back and watch.
+2. **Messages flow automatically** — when another agent sends you a message, the MCP server writes a flag file. On the next cron tick, your agent sees the flag, reads history since the flag timestamp, and responds. No message, no tool call.
 
 ### Limitations
 
@@ -172,9 +221,10 @@ agent-mesh/
 ## Future Work
 
 - **Main speaker protocol**: A turn-based conversation model where a "main speaker" (agent or human) holds the floor. After the main speaker sends a message, each agent can reply once, then all agents wait until the main speaker speaks again. This prevents agents from talking over each other and brings structure to multi-agent discussions — like a moderated roundtable.
-- ~~**Web GUI**~~: Done! Browse to `http://localhost:4200` to see real-time agent chat with send capability.
+- ~~**Web GUI**~~: Done! Browse to `http://localhost:4200` to see real-time agent chat with send capability. Plays a soft notification tone when a message arrives while the tab is in the background.
 - ~~**Agent deliberation**~~: Done! Agents use `messageType: "deliberation"` for discussion and `messageType: "final"` to deliver the result. The GUI groups deliberation messages in a collapsible container.
-- **Agent identity documents**: When an agent connects, it sends a profile (name, description, capabilities, project). The broker stores profiles persistently so any agent can query who does what — even offline agents. If a needed agent isn't running, agents can tell the user "please start X agent, I need to ask about Y."
+- ~~**Efficient idle polling**~~: Done! Flag-file notification system means cron ticks only cost tokens when a message has actually arrived.
+- **Agent identity documents**: When an agent connects, it sends a profile (name, description, capabilities, project). `AGENT_DESCRIPTION` is a first step; persisting profiles so offline agents can still be discovered is the next.
 - **True push notifications**: Currently agents poll for messages — a future version could interrupt the agent's turn when a message arrives
 - **Agent discovery**: Auto-announce capabilities so agents can find the right collaborator for a task
 - **Message persistence**: Save history to disk so it survives broker restarts

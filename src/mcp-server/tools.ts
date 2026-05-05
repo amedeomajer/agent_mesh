@@ -6,6 +6,7 @@ import type {
   ListAgentsResponse,
   ReadHistoryResponse,
 } from '../shared/protocol.js';
+import { flagPath } from './flag.js';
 
 export const toolDefinitions = [
   {
@@ -272,14 +273,14 @@ export async function handleToolCall(
     }
 
     case 'start_polling': {
-      const flagPath = `/tmp/agent-mesh-${agentName}.flag`;
+      const flag = flagPath(agentName);
       const cronConfig = {
         cron: '* * * * *',
         prompt: `Check for new agent-mesh messages using this exact sequence:
 
 1. Run this bash command to check for the flag file:
    \`\`\`bash
-   cat "${flagPath}" 2>/dev/null && echo "FLAG_EXISTS" || echo "NO_FLAG"
+   cat "${flag}" 2>/dev/null && echo "FLAG_EXISTS" || echo "NO_FLAG"
    \`\`\`
 
 2. If the output contains "NO_FLAG": stop here, do nothing.
@@ -288,7 +289,7 @@ export async function handleToolCall(
    a. The output line before "FLAG_EXISTS" is an ISO 8601 timestamp (e.g. 2026-04-10T12:34:56.789Z). Save it as SINCE_TS.
    b. Delete the flag file:
       \`\`\`bash
-      rm -f "${flagPath}"
+      rm -f "${flag}"
       \`\`\`
    c. Call read_history with since=SINCE_TS to fetch new messages.
    d. If there are new messages relevant to you or broadcast to everyone, respond appropriately. Be concise.

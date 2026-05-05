@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { handleToolCall } from '../../src/mcp-server/tools.js';
+import {
+  sanitizeAgentName,
+  flagPath,
+  writeFlagIfAbsent,
+} from '../../src/mcp-server/flag.js';
 
 const FLAG_PATH = `/tmp/agent-mesh-test-agent.flag`;
 
@@ -53,6 +58,56 @@ describe('flag file write behavior', () => {
       }
     };
     expect(() => safeFlagWrite('/nonexistent-dir/test.flag', 'ts')).not.toThrow();
+  });
+});
+
+describe('flag helper module', () => {
+  const cleanupAgents = ['helper-test', '___evil', 'mesh', 'pedregal'];
+
+  beforeEach(() => {
+    for (const a of cleanupAgents) {
+      try { unlinkSync(flagPath(a)); } catch { /* ok */ }
+    }
+  });
+
+  afterEach(() => {
+    for (const a of cleanupAgents) {
+      try { unlinkSync(flagPath(a)); } catch { /* ok */ }
+    }
+  });
+
+  it('sanitizes unsafe characters in agent name', () => {
+    expect(sanitizeAgentName('mesh-agent_01')).toBe('mesh-agent_01');
+    expect(sanitizeAgentName('../etc/passwd')).toBe('___etc_passwd');
+    expect(sanitizeAgentName('a/b\\c d')).toBe('a_b_c_d');
+  });
+
+  it('flagPath uses sanitized name in /tmp', () => {
+    expect(flagPath('mesh')).toBe('/tmp/agent-mesh-mesh.flag');
+    expect(flagPath('../evil')).toBe('/tmp/agent-mesh-___evil.flag');
+  });
+
+  it('writes flag with timestamp minus 1ms on first deliver', () => {
+    writeFlagIfAbsent('helper-test', '2026-05-05T10:00:00.000Z');
+    const content = readFileSync(flagPath('helper-test'), 'utf8');
+    expect(content).toBe('2026-05-05T09:59:59.999Z');
+  });
+
+  it('does not overwrite the flag on subsequent deliver', () => {
+    writeFlagIfAbsent('helper-test', '2026-05-05T10:00:00.000Z');
+    writeFlagIfAbsent('helper-test', '2026-05-05T10:00:05.000Z');
+    const content = readFileSync(flagPath('helper-test'), 'utf8');
+    expect(content).toBe('2026-05-05T09:59:59.999Z');
+  });
+
+  it('writes a separate flag per agent', () => {
+    writeFlagIfAbsent('mesh', '2026-05-05T10:00:00.000Z');
+    writeFlagIfAbsent('pedregal', '2026-05-05T10:00:01.000Z');
+    expect(existsSync(flagPath('mesh'))).toBe(true);
+    expect(existsSync(flagPath('pedregal'))).toBe(true);
+    expect(readFileSync(flagPath('pedregal'), 'utf8')).toBe(
+      '2026-05-05T10:00:00.999Z',
+    );
   });
 });
 

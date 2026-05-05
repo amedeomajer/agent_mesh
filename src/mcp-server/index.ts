@@ -5,11 +5,11 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
-import { writeFileSync, existsSync } from "node:fs";
 import { DEFAULT_BROKER_URL } from "../shared/constants.js";
 import type { AgentRole, BrokerOutbound } from "../shared/protocol.js";
 import { getToolDefinitions, handleToolCall, resolvePending } from "./tools.js";
 import { pushChannelNotification } from "./channel.js";
+import { writeFlagIfAbsent } from "./flag.js";
 
 const AGENT_NAME = process.env.AGENT_NAME;
 const AGENT_DESCRIPTION = process.env.AGENT_DESCRIPTION;
@@ -88,20 +88,11 @@ ws.on("message", (raw) => {
   }
 
   // If it's a delivered message, push it to Claude via Channel notification
+  // and drop a flag file so an idle cron prompt can detect pending work
+  // without calling read_history.
   if (msg.type === "deliver") {
     pushChannelNotification(mcp, msg);
-    try {
-      const flagPath = `/tmp/agent-mesh-${AGENT_NAME}.flag`;
-      // Only write if no flag exists yet — preserve the earliest timestamp
-      // so read_history with since= doesn't miss earlier messages
-      if (!existsSync(flagPath)) {
-        // Subtract 1ms so read_history(since=flagTimestamp) is inclusive of this message
-        const ts = new Date(new Date(msg.timestamp).getTime() - 1).toISOString();
-        writeFileSync(flagPath, ts, "utf8");
-      }
-    } catch {
-      // /tmp may be unavailable in sandboxed environments — not fatal
-    }
+    writeFlagIfAbsent(AGENT_NAME, msg.timestamp);
   }
 });
 

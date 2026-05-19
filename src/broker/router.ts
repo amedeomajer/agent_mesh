@@ -6,6 +6,7 @@ import type {
   SendMessage,
   ListAgentsRequest,
   ReadHistoryRequest,
+  SearchHistoryRequest,
   SystemEventMessage,
 } from '../shared/protocol.js';
 import type { Registry } from './registry.js';
@@ -29,6 +30,9 @@ export class Router {
         break;
       case 'read_history':
         this.handleReadHistory(senderName, senderWs, msg);
+        break;
+      case 'search_history':
+        this.handleSearchHistory(senderWs, msg);
         break;
     }
   }
@@ -147,6 +151,15 @@ export class Router {
         clearTimeout(timer);
         cleanup();
       }
+    });
+  }
+
+  private handleSearchHistory(ws: WebSocket, msg: SearchHistoryRequest): void {
+    const messages = this.history.search(msg.query, { from: msg.from, limit: msg.limit });
+    this.send(ws, {
+      type: 'search_history_response',
+      requestId: msg.requestId,
+      messages,
     });
   }
 

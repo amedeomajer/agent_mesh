@@ -45,6 +45,14 @@ export interface ReadHistoryRequest {
   wait?: number;  // seconds to long-poll if no messages match (max 30)
 }
 
+export interface SearchHistoryRequest {
+  type: 'search_history';
+  requestId: string;
+  query: string;  // case-insensitive substring match against message content
+  from?: string;
+  limit?: number;
+}
+
 export interface RegisterViewerMessage {
   type: 'register_viewer';
 }
@@ -102,6 +110,7 @@ export type BrokerInbound =
   | SendMessage
   | ListAgentsRequest
   | ReadHistoryRequest
+  | SearchHistoryRequest
   | WorkflowCreateRequest
   | WorkflowAssignRequest
   | WorkflowCompleteRequest
@@ -134,6 +143,12 @@ export interface HistoryEntry {
 
 export interface ReadHistoryResponse {
   type: 'read_history_response';
+  requestId: string;
+  messages: HistoryEntry[];
+}
+
+export interface SearchHistoryResponse {
+  type: 'search_history_response';
   requestId: string;
   messages: HistoryEntry[];
 }
@@ -235,6 +250,7 @@ export interface WorkflowError {
 export type BrokerOutbound =
   | ListAgentsResponse
   | ReadHistoryResponse
+  | SearchHistoryResponse
   | DeliverMessage
   | ErrorMessage
   | SystemEventMessage

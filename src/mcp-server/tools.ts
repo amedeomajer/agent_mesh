@@ -5,6 +5,7 @@ import type {
   BrokerOutbound,
   ListAgentsResponse,
   ReadHistoryResponse,
+  SearchHistoryResponse,
 } from '../shared/protocol.js';
 import { flagPath } from './flag.js';
 
@@ -67,6 +68,28 @@ export const toolDefinitions = [
             'Seconds to wait for new messages if none available (long-poll, max 30). Returns immediately when a message arrives.',
         },
       },
+    },
+  },
+  {
+    name: 'search_history',
+    description: 'Search the mesh chat history for messages containing a keyword or phrase',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Case-insensitive text to search for in message content',
+        },
+        from: {
+          type: 'string',
+          description: 'Optionally restrict results to a specific sender agent',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max messages to return (default 20)',
+        },
+      },
+      required: ['query'],
     },
   },
   {
@@ -270,6 +293,27 @@ export async function handleToolCall(
         (m) => `[${m.timestamp}] ${m.from} -> ${m.to}: ${m.content}`,
       );
       return text(lines.join('\n'));
+    }
+
+    case 'search_history': {
+      const query = args.query as string;
+      if (!query || typeof query !== 'string') {
+        return text('Error: query must be a non-empty string.');
+      }
+      const resp = (await request(ws, {
+        type: 'search_history',
+        query,
+        from: args.from,
+        limit: args.limit,
+      })) as SearchHistoryResponse;
+
+      if (resp.messages.length === 0) {
+        return text(`No messages found matching "${query}".`);
+      }
+      const lines = resp.messages.map(
+        (m) => `[${m.timestamp}] ${m.from} -> ${m.to}: ${m.content}`,
+      );
+      return text(`${resp.messages.length} result(s) for "${query}":\n\n${lines.join('\n')}`);
     }
 
     case 'start_polling': {

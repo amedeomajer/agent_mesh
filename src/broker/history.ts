@@ -42,6 +42,18 @@ export class History {
     return result.slice(-limit);
   }
 
+  search(query: string, filters?: { from?: string; limit?: number }): HistoryEntry[] {
+    const q = query.toLowerCase();
+    let result = this.entries.filter((e) => e.content.toLowerCase().includes(q));
+
+    if (filters?.from) {
+      result = result.filter((e) => e.from === filters.from);
+    }
+
+    const limit = filters?.limit ?? 20;
+    return result.slice(-limit);
+  }
+
   onNewMessage(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

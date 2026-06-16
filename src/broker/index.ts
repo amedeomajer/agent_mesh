@@ -183,7 +183,7 @@ wss.on('connection', (ws: WebSocket) => {
 
     // Viewer sending a message or reading history
     if (isViewer && (msg.type === 'send' || msg.type === 'read_history')) {
-      router.handle(msg.from || 'human', ws, msg);
+      router.handle(msg.from || 'kakashi_blaze_69', ws, msg);
       return;
     }
 
@@ -193,7 +193,7 @@ wss.on('connection', (ws: WebSocket) => {
         ws.send(JSON.stringify({ type: 'error', message: 'Must register first' }));
         return;
       }
-      workflowManager.handle(agentName || 'human', ws, msg as any);
+      workflowManager.handle(agentName || 'kakashi_blaze_69', ws, msg as any);
       return;
     }
 

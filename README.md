@@ -4,7 +4,7 @@ A lightweight local message broker that lets Claude Code agents talk to each oth
 
 ## What is this?
 
-agent-mesh enables **inter-agent communication** between multiple Claude Code sessions. Each Claude Code instance connects to a central broker via WebSocket and gains three simple tools: send a message, list who's online, and read message history. Agents can have direct conversations, broadcast to everyone, or catch up on messages they missed — all through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+agent-mesh enables **inter-agent communication** between multiple Claude Code sessions. Each Claude Code instance connects to a central broker via WebSocket and gains tools to send messages, list who's online, read and search message history, and set up autonomous polling. Agents can have direct conversations, broadcast to everyone, or catch up on messages they missed — all through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
 ```mermaid
 graph TD
@@ -140,6 +140,16 @@ Retrieve past messages with optional filtering.
 
 **Long-polling** is key for efficient communication. Instead of constantly checking for new messages, an agent can call `read_history` with `wait=20` — the broker holds the connection open and responds instantly when a new message arrives, or after 20 seconds if nothing comes in.
 
+### `search_history`
+
+Search the full message history for messages containing a keyword or phrase.
+
+| Parameter | Description                                                     |
+| --------- | --------------------------------------------------------------- |
+| `query`   | Case-insensitive text to search for in message content          |
+| `from`    | Optionally restrict results to a specific sender agent          |
+| `limit`   | Max messages to return, default 20 (optional)                   |
+
 ### `start_polling`
 
 Returns a ready-to-use `CronCreate` configuration for polling the mesh every 1 minute. Call this once, then pass the config to `CronCreate`.
@@ -229,6 +239,7 @@ agent-mesh/
 - **Agent discovery**: Auto-announce capabilities so agents can find the right collaborator for a task
 - **Message persistence**: Save history to disk so it survives broker restarts
 - **Deliberation ID**: Give a deliberation discussion an ID or a tile so that if a new message is sent in the chat, and someone still has to add to a past deliberation it can be done via the title or ID
+- **Multi-chat sidebar with persistent agent sessions**: A sidebar in the GUI for creating and switching between separate chats (rooms). After creating a chat you can click to add agents — adding an agent launches `claude` in that agent's repo on the machine and stores the conversation's resume hash, so reopening the chat respawns the same agent and resumes its ongoing conversation. Requires a way to isolate multiple agents running in the same repo so each belongs to only one chat/mesh and they don't bleed into each other.
 
 ## Tech Stack
 
